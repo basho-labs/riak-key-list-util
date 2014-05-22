@@ -1,7 +1,7 @@
 riak-key-list-util
 ==================
 
-A Riak console utility script for per-vnode key counting, siblings logging and more.
+A Riak console utility script for per-vnode key counting, siblings logging and more. (For Riak 1.1.4)
 
 ## Usage
 This script needs to be run from a Riak console, on one of the Riak nodes. 
@@ -56,7 +56,7 @@ Done.
 ok
 ```
 
-Outside of the Riak console, you should now be able to see the produced log files, for each partition on a given node.
+Outside of the Riak console, you should now be able to see the resulting log files, for each partition on a given node.
 
 ```
 ls /tmp/
@@ -65,3 +65,33 @@ dev1@192.168.10.1-548063113999088594326381812268606132370974703616-counts.txt
 dev1@192.168.10.1-548063113999088594326381812268606132370974703616-siblings.txt
 ...
 ```
+
+### Bucket key counts files
+These output files will be named in the form of `[node name]-[partition number]-counts.txt`. Their contents will be of the form
+`{<<"bucket name">>,#keys}`, one line per bucket.
+
+For example:
+
+```erl
+{<<"test-bucket-one">>,100}
+{<<"test-bucket-two">>,150}
+```
+
+### Logs of Objects with Siblings
+These will be named in the form of `[node name]-[partition number]-siblings.txt`. (If no objects with siblings are found for a particular partition,
+no siblings log file will be created for that partition). The files consist of the following entries for each object, separated by a single blank line:
+
+```erl
+{<<"bucket name">>,<<"object key">>,2}
+{{vtag,"6oEMJzrPKX6gPgPYm9s2pt"},
+ {date_modified,{{2014,5,14},{11,6,30}}},
+ {is_deleted,false}}
+<<"sibling value 2">>
+{{vtag,"6ZPSo6ATuiQohGuaBYsdWq"},
+ {date_modified,{{2014,5,14},{11,6,25}}},
+ {is_deleted,false}}
+<<"sibling value 1">>
+```
+
+The siblings (each with their own `vtag`), will be sorted by timestamp, most recent to least.
+
