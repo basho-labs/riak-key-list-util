@@ -93,5 +93,5 @@ no siblings log file will be created for that partition). The files consist of t
 <<"sibling value 1">>
 ```
 
-The siblings (each with their own `vtag`), will be sorted by timestamp, most recent to least.
+The siblings (each with their own `vtag`), will be sorted by timestamp, most recent to least. (The `2` following the bucket name and key in the example above denotes the number of siblings for that object).
 
