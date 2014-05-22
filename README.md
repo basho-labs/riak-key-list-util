@@ -24,7 +24,7 @@ This script needs to be run from a Riak console, on one of the Riak nodes.
    Be sure to use the full absolute path to the file. Avoid `~/` shortcuts for user home directories.
    For example, assuming that the repository above was cloned into `/root/`, do the following at the Riak console:
 
-   ```erl
+   ```erlang
    compile:file("/root/riak-key-list-util/key_list_util.erl").
    ```
 
@@ -44,7 +44,7 @@ It takes a single argument, a directory to write the log files to. If you are cr
 
 On the Riak console, once the script has been compiled (for this example, the log files will be created in `/tmp/`), run:
 
-```erl
+```erlang
 key_list_util:count_all_keys("/tmp/").
 ```
 
@@ -72,7 +72,7 @@ These output files will be named in the form of `[node name]-[partition number]-
 
 For example:
 
-```erl
+```erlang
 {<<"test-bucket-one">>,100}
 {<<"test-bucket-two">>,150}
 ```
@@ -81,7 +81,7 @@ For example:
 These will be named in the form of `[node name]-[partition number]-siblings.txt`. (If no objects with siblings are found for a particular partition,
 no siblings log file will be created for that partition). The files consist of the following entries for each object, separated by a single blank line:
 
-```erl
+```erlang
 {<<"bucket name">>,<<"object key">>,2}
 {{vtag,"6oEMJzrPKX6gPgPYm9s2pt"},
  {date_modified,{{2014,5,14},{11,6,30}}},
