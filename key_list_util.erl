@@ -136,9 +136,20 @@ force_reconcile(Bucket, Key, CorrectSibling) ->
 	UpdatedObj = riak_object:apply_updates(NewObj),
 	C:put(UpdatedObj, all, all).  % W=all, DW=all
 
+% Convert a serialized binary into a riak_object() record
+% The function riak_object:from_binary() was introduced in 1.4, so
+% we need to check for its existence and use it if possible
+unserialize(Bucket, Key, Val) ->
+	case erlang:function_exported(riak_object, from_binary, 3) of
+		true -> 
+			riak_object:from_binary(Bucket, Key, Val);
+		false ->
+			binary_to_term(Val)
+	end.
+
 % Log all siblings for a riak object (if any exist)
-log_or_resolve_siblings(OutputFilename, Bucket, Key, Val, Options) ->
-	Obj = binary_to_term(Val),  % convert a serialized binary into a riak_object() record
+log_or_resolve_siblings(OutputFilename, Bucket, Key, ObjBinary, Options) ->
+	Obj = unserialize(Bucket, Key, ObjBinary),
 	SiblingCount = riak_object:value_count(Obj),
 
 	if SiblingCount > 1 ->
@@ -199,9 +210,9 @@ process_vnode(Vnode, OutputDir, Options) ->
 	SiblingsFilename = filename:join(OutputDir, [io_lib:format("~s-~p-siblings.log", [Node, Partition])]),
 
 	InitialAccumulator = dict:store(<<"BucketKeyCounts">>, dict:new(), dict:new()),
-	ProcessObj = fun(BKey, Contents, AccDict) ->
+	ProcessObj = fun(BKey, ObjBinary, AccDict) ->
 		{Bucket, Key} = BKey,
-		log_or_resolve_siblings(SiblingsFilename, Bucket, Key, Contents, Options),
+		log_or_resolve_siblings(SiblingsFilename, Bucket, Key, ObjBinary, Options),
 
 		case lists:member(count_keys, Options) of
 			true ->
