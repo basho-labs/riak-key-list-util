@@ -24,14 +24,14 @@
 -compile(export_all).
 
 % Describes the Contents of a Riak object. A "sibling" is an instance of this record.
-% Duplicated from riak_kv/riak_object (riak version 1.1.2), since it's needed by compare_content_dates()
+% Duplicated from riak_kv/riak_object, since it's needed by compare_content_dates()
 -record(r_content, {
           metadata :: dict(),
           value :: term()
          }).
 
-% Describes a Riak Object (as of 1.1.2)
-% Duplicated from riak_kv/riak_object (riak version 1.1.2), since it's needed by compare_content_dates()
+% Describes a Riak Object
+% Duplicated from riak_kv/riak_object, since it's needed by compare_content_dates()
 -record(r_object, {
           bucket :: riak_object:bucket(),
           key :: riak_object:key(),
@@ -48,7 +48,7 @@ resolve_all_siblings(OutputDir) ->
 	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings]).	
 
 % Used for sorting an object's siblings in modified timestamp order (most recently modified to least)
-% Duplicated from riak_kv/riak_object (riak version 1.1.2) (since it's not exported from that module)
+% Duplicated from riak_kv/riak_object (since it's not exported from that module)
 compare_content_dates(C1, C2) ->
     D1 = dict:fetch(<<"X-Riak-Last-Modified">>, C1#r_content.metadata),
     D2 = dict:fetch(<<"X-Riak-Last-Modified">>, C2#r_content.metadata),

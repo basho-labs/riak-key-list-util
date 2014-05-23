@@ -96,7 +96,7 @@ no siblings log file will be created for that partition). The files consist of t
 The siblings (each with their own `vtag`), will be sorted by timestamp, most recent to least. (The `2` following the bucket name and key in the example above denotes the number of siblings for that object).
 
 #### Note on Tombstones
-In the sibling logs above, tombstones will be denoted by `{is_deleted,true}`, and will have an empty value, `<<>>`.
+In the sibling logs above, tombstones will be denoted by `{is_deleted,true}`.
 
 ## Sibling Resolution
 To force-reconcile all siblings on the cluster, use the `resolve_all_siblings()` function. As with the key counting function above,
