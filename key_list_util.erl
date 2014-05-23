@@ -195,8 +195,8 @@ process_node(OutputDir, Options) ->
 % Performs a riak_kv_vnode:fold(), and invokes logging functions for each key in this partition
 process_vnode(Vnode, OutputDir, Options) ->
 	{Partition, Node} = Vnode,
-	CountsFilename = filename:join(OutputDir, [io_lib:format("~s-~p-counts.txt", [Node, Partition])]),
-	SiblingsFilename = filename:join(OutputDir, [io_lib:format("~s-~p-siblings.txt", [Node, Partition])]),
+	CountsFilename = filename:join(OutputDir, [io_lib:format("~s-~p-counts.log", [Node, Partition])]),
+	SiblingsFilename = filename:join(OutputDir, [io_lib:format("~s-~p-siblings.log", [Node, Partition])]),
 
 	InitialAccumulator = dict:store(<<"BucketKeyCounts">>, dict:new(), dict:new()),
 	ProcessObj = fun(BKey, Contents, AccDict) ->
