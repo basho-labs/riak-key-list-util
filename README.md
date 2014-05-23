@@ -61,13 +61,13 @@ Outside of the Riak console, you should now be able to see the resulting log fil
 ```
 ls /tmp/
 ...
-dev1@192.168.10.1-548063113999088594326381812268606132370974703616-counts.txt
-dev1@192.168.10.1-548063113999088594326381812268606132370974703616-siblings.txt
+dev1@192.168.10.1-548063113999088594326381812268606132370974703616-counts.log
+dev1@192.168.10.1-548063113999088594326381812268606132370974703616-siblings.log
 ...
 ```
 
 ### Bucket key counts files
-These output files will be named in the form of `[node name]-[partition number]-counts.txt`. Their contents will be of the form
+These output files will be named in the form of `[node name]-[partition number]-counts.log`. Their contents will be of the form
 `{<<"bucket name">>,#keys}`, one line per bucket.
 
 For example:
@@ -78,7 +78,7 @@ For example:
 ```
 
 ### Logs of Objects with Siblings
-These will be named in the form of `[node name]-[partition number]-siblings.txt`. (If no objects with siblings are found for a particular partition,
+These will be named in the form of `[node name]-[partition number]-siblings.log`. (If no objects with siblings are found for a particular partition,
 no siblings log file will be created for that partition). The files consist of the following entries for each object, separated by a single blank line:
 
 ```erlang
@@ -97,3 +97,33 @@ The siblings (each with their own `vtag`), will be sorted by timestamp, most rec
 
 #### Note on Tombstones
 In the sibling logs above, tombstones will be denoted by `{is_deleted,true}`, and will have an empty value, `<<>>`.
+
+## Sibling Resolution
+To force-reconcile all siblings on the cluster, use the `resolve_all_siblings()` function. As with the key counting function above,
+the script will run on every node in the cluster (sequentially, this time).
+
+On the Riak console, once the script has been compiled (for this example, the log files will be created in `/tmp/`), run:
+
+```erlang
+key_list_util:resolve_all_siblings("/tmp/").
+```
+
+The output files this function produces will be similar to the `*-siblings.log` files above, with the addition of a 
+`Resolved to Vtag:` line at the end of each object listing. For example:
+
+```erlang
+{<<"bucket name">>,<<"object key">>,2}
+{{vtag,"6oEMJzrPKX6gPgPYm9s2pt"},
+ {date_modified,{{2014,5,14},{11,6,30}}},
+ {is_deleted,false}}
+<<"sibling value 2">>
+{{vtag,"6ZPSo6ATuiQohGuaBYsdWq"},
+ {date_modified,{{2014,5,14},{11,6,25}}},
+ {is_deleted,false}}
+<<"sibling value 1">>
+Resolved to Vtag: "6oEMJzrPKX6gPgPYm9s2pt"
+```
+
+Note: There will be fewer `*-siblings.log` entries than during key counting and sibling logging. Because the sibling resolution
+runs sequentially, once a sibling is resolved for one node, this also resolves all 3 replicas, and so the resolved objects will not be
+encountered on other nodes.
