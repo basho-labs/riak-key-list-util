@@ -42,7 +42,10 @@
          }).
 
 count_all_keys(OutputDir) ->
-	process_cluster(OutputDir).
+	process_cluster_parallel(OutputDir, [count_keys, log_siblings]). 
+
+resolve_all_siblings(OutputDir) ->
+	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings]).	
 
 % Used for sorting an object's siblings in modified timestamp order (most recently modified to least)
 % Duplicated from riak_kv/riak_object (riak version 1.1.2) (since it's not exported from that module)
@@ -71,6 +74,12 @@ compare_content_dates(C1, C2) ->
             C1 < C2
     end.
 
+get_vtag(Obj) ->
+	dict:fetch(<<"X-Riak-VTag">>, Obj#r_content.metadata).
+
+is_deleted(Obj) ->
+	dict:is_key(<<"X-Riak-Deleted">>, Obj#r_content.metadata).
+
 % Loads the contents of a module (this module, usually) on every node in the cluster,
 % to parallelize and cut down on inter-node disterl chatter.
 load_module_on_nodes(Module, Nodes) ->
@@ -78,39 +87,58 @@ load_module_on_nodes(Module, Nodes) ->
 	case code:get_object_code(Module) of
 		{Module, Bin, File} ->
 			{_, []} = rpc:multicall(Nodes, code, load_binary, [Module, File, Bin]);
-	error ->
-		error(lists:flatten(io_lib:format("unable to get_object_code(~s)", [Module])))
-	end,
-	ok.
-
-% log_large_objects(OutputFilename, Threshold) ->
-% 	Scan = fun(BKey, Val, Acc) ->
-% 		Size = byte_size(Val),
-% 		if Size >= Threshold ->
-% 				Msg = io_lib:format("~p :: ~p bytes~n", [BKey, Size]),
-% 				file:write_file(OutputFilename, Msg, [append]);
-% 		true -> ok
-% 		end,
-% 		Acc
-% 	end,
-% 	InitialAccumulator = [],
-% 	{Scan, InitialAccumulator}.
+		error ->
+			error(lists:flatten(io_lib:format("unable to get_object_code(~s)", [Module])))
+	end.
 
 % Log the vtag, value and deleted status of a given sibling object
 log_sibling_contents(Obj, OutputFilename) ->
-	Metadata = Obj#r_content.metadata,
-	DateModified = calendar:now_to_local_time(dict:fetch(<<"X-Riak-Last-Modified">>, Metadata)),
-	Deleted = dict:is_key(<<"X-Riak-Deleted">>, Metadata),
-	Vtag = dict:fetch(<<"X-Riak-VTag">>, Metadata),
+	DateModified = calendar:now_to_local_time(dict:fetch(<<"X-Riak-Last-Modified">>, Obj#r_content.metadata)),
+	Deleted = is_deleted(Obj),
+	Vtag = get_vtag(Obj),
 	Msg = io_lib:format("~p~n", [{{vtag, Vtag}, {date_modified, DateModified}, {is_deleted, Deleted}}]),
-	% Msg = io_lib:format("~p~n", [Metadata]),
 	file:write_file(OutputFilename, Msg, [append]),
 	Value = Obj#r_content.value,
 	file:write_file(OutputFilename, io_lib:format("~p~n", [Value]), [append]).
 
+% Returns the last (most recent) version of the object (by timestamp)
+% If the last version is a tombstone, return the 
+% (The list of siblings is pre-sorted by timestamp, most recent to least)
+last_valid_vtag([]) ->
+	{error, "No valid (non-deleted) sibling found."};
+last_valid_vtag([Sibling|Rest]) ->
+	case is_deleted(Sibling) of
+		false ->
+			{ok, {get_vtag(Sibling), Sibling}};
+			% {ok, {test, test}};
+		true ->
+			last_valid_vtag(Rest)
+	end.
+
+resolve_object_siblings(OutputFilename, Bucket, Key, SiblingsByDate) ->
+	case last_valid_vtag(SiblingsByDate) of
+		{ok, {CorrectVtag, CorrectSibling}} ->
+			case force_reconcile(Bucket, Key, CorrectSibling) of
+				ok -> 
+					Msg = io_lib:format("Resolved to Vtag: ~p~n", [CorrectVtag]);
+				{error, Error} -> 
+					Msg = io_lib:format("Error resolving to Vtag ~p :: ~p~n", [CorrectVtag, Error])
+			end;
+		{error, Error} ->
+			Msg = io_lib:format("Error resolving siblings: ~p~n", [{Error}])
+	end,
+	file:write_file(OutputFilename, Msg, [append]).
+
+force_reconcile(Bucket, Key, CorrectSibling) ->
+	{ok, C} = riak:local_client(),
+	{ok, OldObj} = C:get(Bucket, Key),
+	NewObj = riak_object:update_metadata(riak_object:update_value(OldObj, CorrectSibling#r_content.value), CorrectSibling#r_content.metadata),
+	UpdatedObj = riak_object:apply_updates(NewObj),
+	C:put(UpdatedObj, all, all).  % W=all, DW=all
+
 % Log all siblings for a riak object (if any exist)
-log_siblings(OutputFilename, Bucket, Key, Val) ->
-	Obj = binary_to_term(Val),
+log_or_resolve_siblings(OutputFilename, Bucket, Key, Val, Options) ->
+	Obj = binary_to_term(Val),  % convert a serialized binary into a riak_object() record
 	SiblingCount = riak_object:value_count(Obj),
 
 	if SiblingCount > 1 ->
@@ -118,36 +146,54 @@ log_siblings(OutputFilename, Bucket, Key, Val) ->
 		SiblingsByDate = lists:sort(fun compare_content_dates/2, Contents),
 		Msg = io_lib:format("~n~p~n", [{Bucket, Key, SiblingCount}]),
 		file:write_file(OutputFilename, Msg, [append]),
-		lists:foreach(fun(Sibling) -> log_sibling_contents(Sibling, OutputFilename) end, SiblingsByDate);
+
+		lists:foreach(fun(Sibling) -> log_sibling_contents(Sibling, OutputFilename) end, SiblingsByDate),
+
+		case lists:member(resolve_siblings, Options) of
+			true ->
+				resolve_object_siblings(OutputFilename, Bucket, Key, SiblingsByDate);
+			_ -> ok
+		end;
 	true -> ok
-	end,
-	ok.
+	end.	
+
+member_nodes() ->
+	{ok, Ring} = riak_core_ring_manager:get_raw_ring(),
+	riak_core_ring:all_members(Ring).
+
+% For each node in the cluster, in parallel, load this module, 
+% and invoke the process_node() function on its vnodes.
+process_cluster_parallel(OutputDir, Options) ->
+	io:format("Scanning all nodes in parallel...~n"),
+	Members = member_nodes(),
+	load_module_on_nodes(?MODULE, Members),
+	rpc:multicall(Members, ?MODULE, process_node, [OutputDir, Options]),
+	io:format("Done.~n").
 
 % For each node in the cluster, load this module, 
 % and invoke the process_node() function on its vnodes.
-process_cluster(OutputDir) ->
-	io:format("Scanning cluster...~n"),
-	{ok, Ring} = riak_core_ring_manager:get_raw_ring(),
-	Members = riak_core_ring:all_members(Ring),
+process_cluster_serial(OutputDir, Options) ->
+	io:format("Scanning all nodes serially...~n"),
+	Members = member_nodes(),
 	load_module_on_nodes(?MODULE, Members),
-	rpc:multicall(Members, ?MODULE, process_node, [OutputDir]),
-	% process_node(OutputDir),
-	Msg = "Done.~n",
-	io:format(Msg),
-	ok.
+	NodeFun = fun(Node) ->
+		io:format("Processing node ~p~n", [Node]),
+		rpc:call(Node, ?MODULE, process_node, [OutputDir, Options])
+	end,
+	lists:foreach(NodeFun, Members),
+	io:format("Done.~n").
 
 % Invoked on each member node in the ring
 % Calls process_vnode() on each vnode local to this node.
-process_node(OutputDir) ->
+process_node(OutputDir, Options) ->
 	{ok, Ring} = riak_core_ring_manager:get_raw_ring(),
 	Owners = riak_core_ring:all_owners(Ring),
 	LocalVnodes = [IdxOwner || IdxOwner={_, Owner} <- Owners,
 	 					 Owner =:= node()],
-	lists:foreach(fun(Vnode) -> process_vnode(Vnode, OutputDir) end, LocalVnodes),
-	ok.
+	lists:foreach(fun(Vnode) -> process_vnode(Vnode, OutputDir, Options) end, LocalVnodes).
 
 % Performs a riak_kv_vnode:fold(), and invokes logging functions for each key in this partition
-process_vnode(Vnode, OutputDir) ->
+process_vnode(Vnode, OutputDir, Options) ->
 	{Partition, Node} = Vnode,
 	CountsFilename = filename:join(OutputDir, [io_lib:format("~s-~p-counts.txt", [Node, Partition])]),
 	SiblingsFilename = filename:join(OutputDir, [io_lib:format("~s-~p-siblings.txt", [Node, Partition])]),
@@ -155,14 +201,18 @@ process_vnode(Vnode, OutputDir) ->
 	InitialAccumulator = dict:store(<<"BucketKeyCounts">>, dict:new(), dict:new()),
 	ProcessObj = fun(BKey, Contents, AccDict) ->
 		{Bucket, Key} = BKey,
-		log_siblings(SiblingsFilename, Bucket, Key, Contents),
-		% Update per-bucket key count
-		CountDict = dict:update_counter(Bucket, 1, dict:fetch(<<"BucketKeyCounts">>, AccDict)),
-		dict:store(<<"BucketKeyCounts">>, CountDict, AccDict)
+		log_or_resolve_siblings(SiblingsFilename, Bucket, Key, Contents, Options),
+
+		case lists:member(count_keys, Options) of
+			true ->
+				% Update per-bucket key count
+				CountDict = dict:update_counter(Bucket, 1, dict:fetch(<<"BucketKeyCounts">>, AccDict)),
+				dict:store(<<"BucketKeyCounts">>, CountDict, AccDict);
+			_ -> AccDict
+		end
 	end,
 	Results = riak_kv_vnode:fold(Vnode, ProcessObj, InitialAccumulator),
-	write_vnode_totals(CountsFilename, Results),
-	ok.
+	write_vnode_totals(CountsFilename, Results).
 
 write_vnode_totals(OutputFilename, Results) ->
 	case dict:is_key(<<"BucketKeyCounts">>, Results) of
@@ -170,5 +220,4 @@ write_vnode_totals(OutputFilename, Results) ->
 			Counts = dict:to_list(dict:fetch(<<"BucketKeyCounts">>, Results)),
 			lists:foreach(fun(BucketCount) -> file:write_file(OutputFilename, io_lib:format("~p~n", [BucketCount]), [append]) end, Counts);
 		_ -> ok
-	end,
-	ok.
+	end.
