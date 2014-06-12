@@ -66,6 +66,26 @@ dev1@192.168.10.1-548063113999088594326381812268606132370974703616-siblings.log
 ...
 ```
 
+#### Using Key Counts for Verification
+The per-bucket key count logs discussed above can be used for data verification, for example to compare key counts before and after an upgrade.
+
+The following commands have to be run on *each* Riak node. (The example assumes that the keys were logged to `/tmp/v1/counts/` directory before upgrade, and to `/tmp/v2/counts/` after upgrade):
+
+1. Sort the log files in the output directories:
+
+    ```bash
+    for file in /tmp/v1/counts/*-counts.log; do sort -o $file $file; done
+    for file in /tmp/v2/counts/*-counts.log; do sort -o $file $file; done
+    ```
+
+2. Use `diff` to compare the "before" and "after" directories. `diff` will return no results if the directories are the same.
+
+    ```bash
+    diff -r /tmp/v1/counts /tmp/v2/counts
+    ```
+
+The sorted files should be identical before and after an upgrade. If not, the `diff` command will list any differences in any of the log files.
+
 ### Bucket key counts files
 These output files will be named in the form of `[node name]-[partition number]-counts.log`. Their contents will be of the form
 `{<<"bucket name">>,#keys}`, one line per bucket.
