@@ -44,6 +44,9 @@
 count_all_keys(OutputDir) ->
 	process_cluster_parallel(OutputDir, [count_keys, log_siblings]). 
 
+log_all_keys(OutputDir) ->
+	process_cluster_parallel(OutputDir, [log_keys]). 
+
 resolve_all_siblings(OutputDir) ->
 	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings]).	
 
@@ -147,6 +150,11 @@ unserialize(Bucket, Key, Val) ->
 			binary_to_term(Val)
 	end.
 
+% Log a key/bucket pair to a file
+log_key(OutputFilename, Bucket, Key, _Options) ->
+	Msg = io_lib:format("~p,~p~n", [binary_to_list(Bucket), binary_to_list(Key)]),
+	file:write_file(OutputFilename, Msg, [append]).
+
 % Log all siblings for a riak object (if any exist)
 log_or_resolve_siblings(OutputFilename, Bucket, Key, ObjBinary, Options) ->
 	Obj = unserialize(Bucket, Key, ObjBinary),
@@ -208,11 +216,23 @@ process_vnode(Vnode, OutputDir, Options) ->
 	{Partition, Node} = Vnode,
 	CountsFilename = filename:join(OutputDir, [io_lib:format("~s-~p-counts.log", [Node, Partition])]),
 	SiblingsFilename = filename:join(OutputDir, [io_lib:format("~s-~p-siblings.log", [Node, Partition])]),
+	KeysFilename = filename:join(OutputDir, [io_lib:format("~s-~p-keys.log", [Node, Partition])]),
 
 	InitialAccumulator = dict:store(<<"BucketKeyCounts">>, dict:new(), dict:new()),
 	ProcessObj = fun(BKey, ObjBinary, AccDict) ->
 		{Bucket, Key} = BKey,
-		log_or_resolve_siblings(SiblingsFilename, Bucket, Key, ObjBinary, Options),
+		
+		case lists:member(log_keys, Options) of
+			true ->
+				log_key(KeysFilename, Bucket, Key, Options);
+			_ -> ok
+		end,
+
+		case lists:member(log_siblings, Options) of
+			true ->
+				log_or_resolve_siblings(SiblingsFilename, Bucket, Key, ObjBinary, Options);
+			_ -> ok
+		end,
 
 		case lists:member(count_keys, Options) of
 			true ->
@@ -229,6 +249,6 @@ write_vnode_totals(OutputFilename, Results) ->
 	case dict:is_key(<<"BucketKeyCounts">>, Results) of
 		true ->
 			Counts = dict:to_list(dict:fetch(<<"BucketKeyCounts">>, Results)),
-			lists:foreach(fun(BucketCount) -> file:write_file(OutputFilename, io_lib:format("~p~n", [BucketCount]), [append]) end, Counts);
+			lists:foreach(fun(BucketCount) -> {Bucket,Count} = BucketCount, file:write_file(OutputFilename, io_lib:format("~p,~B~n", [binary_to_list(Bucket),Count]), [append]) end, Counts);
 		_ -> ok
 	end.
