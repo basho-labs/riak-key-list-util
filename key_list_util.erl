@@ -249,6 +249,11 @@ write_vnode_totals(OutputFilename, Results) ->
 	case dict:is_key(<<"BucketKeyCounts">>, Results) of
 		true ->
 			Counts = dict:to_list(dict:fetch(<<"BucketKeyCounts">>, Results)),
-			lists:foreach(fun(BucketCount) -> {Bucket,Count} = BucketCount, file:write_file(OutputFilename, io_lib:format("~p,~B~n", [binary_to_list(Bucket),Count]), [append]) end, Counts);
+			WriteBucketFun = fun(BucketCount) -> 
+				{Bucket, Count} = BucketCount,
+				SBucketName = binary_to_list(Bucket),
+				file:write_file(OutputFilename, io_lib:format("~s,~B~n", [SBucketName, Count]), [append]) 
+			end,
+			lists:foreach(WriteBucketFun, Counts);
 		_ -> ok
 	end.
