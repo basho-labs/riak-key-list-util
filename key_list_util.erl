@@ -142,23 +142,31 @@ force_reconcile(Bucket, Key, CorrectSibling) ->
 % Convert a serialized binary into a riak_object() record
 % The function riak_object:from_binary() was introduced in 1.4, so
 % we need to check for its existence and use it if possible
+unserialize(_B, _K, Val = #r_object{}) ->
+	Val;
+unserialize(_B, _K, <<131, _Rest/binary>>=Val) ->
+	binary_to_term(Val);
 unserialize(Bucket, Key, Val) ->
-	case erlang:function_exported(riak_object, from_binary, 3) of
-		true -> 
-			riak_object:from_binary(Bucket, Key, Val);
-		false ->
-			binary_to_term(Val)
+	try 
+		riak_object:from_binary(Bucket, Key, Val)
+	catch _:_ ->
+		{error, bad_object_format}
 	end.
 
 % Log a key/bucket pair to a file
 log_key(OutputFilename, Bucket, Key, _Options) ->
-	Msg = io_lib:format("~p,~p~n", [binary_to_list(Bucket), binary_to_list(Key)]),
+	Msg = io_lib:format("~s,~s~n", [binary_to_list(Bucket), binary_to_list(Key)]),
 	file:write_file(OutputFilename, Msg, [append]).
 
-% Log all siblings for a riak object (if any exist)
+% Log all siblings for a riak object (if any exist). 
 log_or_resolve_siblings(OutputFilename, Bucket, Key, ObjBinary, Options) ->
 	Obj = unserialize(Bucket, Key, ObjBinary),
-	SiblingCount = riak_object:value_count(Obj),
+	SiblingCount = case Obj of
+		{error, _Error} ->
+			1;  % Error unserializing, skip the logging of the sibling count, below
+		_ -> 
+			riak_object:value_count(Obj)
+	end,
 
 	if SiblingCount > 1 ->
 		Contents = Obj#r_object.contents,
