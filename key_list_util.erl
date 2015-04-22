@@ -155,7 +155,7 @@ unserialize(Bucket, Key, Val) ->
 
 % Log a key/bucket pair to a file
 log_key(OutputFilename, Bucket, Key, _Options) ->
-	Msg = io_lib:format("~p,~s~n", [SBucketName, binary_to_list(Key)]),
+	Msg = io_lib:format("~p,~s~n", [Bucket, binary_to_list(Key)]),
 	file:write_file(OutputFilename, Msg, [append]).
 
 % Log all siblings for a riak object (if any exist).
