@@ -42,13 +42,13 @@
          }).
 
 count_all_keys(OutputDir) ->
-	process_cluster_parallel(OutputDir, [count_keys, log_siblings]). 
+	process_cluster_parallel(OutputDir, [count_keys, log_siblings]).
 
 log_all_keys(OutputDir) ->
-	process_cluster_parallel(OutputDir, [log_keys]). 
+	process_cluster_parallel(OutputDir, [log_keys]).
 
 resolve_all_siblings(OutputDir) ->
-	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings]).	
+	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings]).
 
 % Used for sorting an object's siblings in modified timestamp order (most recently modified to least)
 % Duplicated from riak_kv/riak_object (since it's not exported from that module)
@@ -105,7 +105,7 @@ log_sibling_contents(Obj, OutputFilename) ->
 	file:write_file(OutputFilename, io_lib:format("~p~n", [Value]), [append]).
 
 % Returns the last (most recent) version of the object (by timestamp)
-% If the last version is a tombstone, return the 
+% If the last version is a tombstone, return the
 % (The list of siblings is pre-sorted by timestamp, most recent to least)
 last_valid_vtag([]) ->
 	{error, "No valid (non-deleted) sibling found."};
@@ -122,9 +122,9 @@ resolve_object_siblings(OutputFilename, Bucket, Key, SiblingsByDate) ->
 	case last_valid_vtag(SiblingsByDate) of
 		{ok, {CorrectVtag, CorrectSibling}} ->
 			case force_reconcile(Bucket, Key, CorrectSibling) of
-				ok -> 
+				ok ->
 					Msg = io_lib:format("Resolved to Vtag: ~p~n", [CorrectVtag]);
-				{error, Error} -> 
+				{error, Error} ->
 					Msg = io_lib:format("Error resolving to Vtag ~p :: ~p~n", [CorrectVtag, Error])
 			end;
 		{error, Error} ->
@@ -147,7 +147,7 @@ unserialize(_B, _K, Val = #r_object{}) ->
 unserialize(_B, _K, <<131, _Rest/binary>>=Val) ->
 	binary_to_term(Val);
 unserialize(Bucket, Key, Val) ->
-	try 
+	try
 		riak_object:from_binary(Bucket, Key, Val)
 	catch _:_ ->
 		{error, bad_object_format}
@@ -155,16 +155,16 @@ unserialize(Bucket, Key, Val) ->
 
 % Log a key/bucket pair to a file
 log_key(OutputFilename, Bucket, Key, _Options) ->
-	Msg = io_lib:format("~s,~s~n", [binary_to_list(Bucket), binary_to_list(Key)]),
+	Msg = io_lib:format("~p,~s~n", [SBucketName, binary_to_list(Key)]),
 	file:write_file(OutputFilename, Msg, [append]).
 
-% Log all siblings for a riak object (if any exist). 
+% Log all siblings for a riak object (if any exist).
 log_or_resolve_siblings(OutputFilename, Bucket, Key, ObjBinary, Options) ->
 	Obj = unserialize(Bucket, Key, ObjBinary),
 	SiblingCount = case Obj of
 		{error, _Error} ->
 			1;  % Error unserializing, skip the logging of the sibling count, below
-		_ -> 
+		_ ->
 			riak_object:value_count(Obj)
 	end,
 
@@ -182,13 +182,13 @@ log_or_resolve_siblings(OutputFilename, Bucket, Key, ObjBinary, Options) ->
 			_ -> ok
 		end;
 	true -> ok
-	end.	
+	end.
 
 member_nodes() ->
 	{ok, Ring} = riak_core_ring_manager:get_raw_ring(),
 	riak_core_ring:all_members(Ring).
 
-% For each node in the cluster, in parallel, load this module, 
+% For each node in the cluster, in parallel, load this module,
 % and invoke the process_node() function on its vnodes.
 process_cluster_parallel(OutputDir, Options) ->
 	io:format("Scanning all nodes in parallel...~n"),
@@ -197,7 +197,7 @@ process_cluster_parallel(OutputDir, Options) ->
 	rpc:multicall(Members, ?MODULE, process_node, [OutputDir, Options]),
 	io:format("Done.~n").
 
-% For each node in the cluster, load this module, 
+% For each node in the cluster, load this module,
 % and invoke the process_node() function on its vnodes.
 process_cluster_serial(OutputDir, Options) ->
 	io:format("Scanning all nodes serially...~n"),
@@ -229,7 +229,7 @@ process_vnode(Vnode, OutputDir, Options) ->
 	InitialAccumulator = dict:store(<<"BucketKeyCounts">>, dict:new(), dict:new()),
 	ProcessObj = fun(BKey, ObjBinary, AccDict) ->
 		{Bucket, Key} = BKey,
-		
+
 		case lists:member(log_keys, Options) of
 			true ->
 				log_key(KeysFilename, Bucket, Key, Options);
@@ -257,10 +257,10 @@ write_vnode_totals(OutputFilename, Results) ->
 	case dict:is_key(<<"BucketKeyCounts">>, Results) of
 		true ->
 			Counts = dict:to_list(dict:fetch(<<"BucketKeyCounts">>, Results)),
-			WriteBucketFun = fun(BucketCount) -> 
+			WriteBucketFun = fun(BucketCount) ->
 				{Bucket, Count} = BucketCount,
 				SBucketName = binary_to_list(Bucket),
-				file:write_file(OutputFilename, io_lib:format("~s,~B~n", [SBucketName, Count]), [append]) 
+				file:write_file(OutputFilename, io_lib:format("~p,~B~n", [SBucketName, Count]), [append])
 			end,
 			lists:foreach(WriteBucketFun, Counts);
 		_ -> ok
