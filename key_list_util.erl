@@ -26,20 +26,20 @@
 % Describes the Contents of a Riak object. A "sibling" is an instance of this record.
 % Duplicated from riak_kv/riak_object, since it's needed by compare_content_dates()
 -record(r_content, {
-          metadata :: dict(),
-          value :: term()
-         }).
+		  metadata :: dict(),
+		  value :: term()
+		 }).
 
 % Describes a Riak Object
 % Duplicated from riak_kv/riak_object, since it's needed by compare_content_dates()
 -record(r_object, {
-          bucket :: riak_object:bucket(),
-          key :: riak_object:key(),
-          contents :: [#r_content{}],
-          vclock = vclock:fresh() :: vclock:vclock(),
-          updatemetadata=dict:store(clean, true, dict:new()) :: dict(),
-          updatevalue :: term()
-         }).
+		  bucket :: riak_object:bucket(),
+		  key :: riak_object:key(),
+		  contents :: [#r_content{}],
+		  vclock = vclock:fresh() :: vclock:vclock(),
+		  updatemetadata=dict:store(clean, true, dict:new()) :: dict(),
+		  updatevalue :: term()
+		 }).
 
 count_all_keys(OutputDir) ->
 	process_cluster_parallel(OutputDir, [count_keys, log_siblings]).
@@ -47,35 +47,40 @@ count_all_keys(OutputDir) ->
 log_all_keys(OutputDir) ->
 	process_cluster_parallel(OutputDir, [log_keys]).
 
+% SleepPeriod - optional amount of time to sleep between each key operation,
+% in milliseconds
+log_all_keys(OutputDir, SleepPeriod) ->
+	process_cluster_parallel(OutputDir, [log_keys, {sleep_for, SleepPeriod}]).
+
 resolve_all_siblings(OutputDir) ->
 	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings]).
 
 % Used for sorting an object's siblings in modified timestamp order (most recently modified to least)
 % Duplicated from riak_kv/riak_object (since it's not exported from that module)
 compare_content_dates(C1, C2) ->
-    D1 = dict:fetch(<<"X-Riak-Last-Modified">>, C1#r_content.metadata),
-    D2 = dict:fetch(<<"X-Riak-Last-Modified">>, C2#r_content.metadata),
-    %% true if C1 was modifed later than C2
-    Cmp1 = riak_core_util:compare_dates(D1, D2),
-    %% true if C2 was modifed later than C1
-    Cmp2 = riak_core_util:compare_dates(D2, D1),
-    %% check for deleted objects
-    Del1 = dict:is_key(<<"X-Riak-Deleted">>, C1#r_content.metadata),
-    Del2 = dict:is_key(<<"X-Riak-Deleted">>, C2#r_content.metadata),
+	D1 = dict:fetch(<<"X-Riak-Last-Modified">>, C1#r_content.metadata),
+	D2 = dict:fetch(<<"X-Riak-Last-Modified">>, C2#r_content.metadata),
+	%% true if C1 was modifed later than C2
+	Cmp1 = riak_core_util:compare_dates(D1, D2),
+	%% true if C2 was modifed later than C1
+	Cmp2 = riak_core_util:compare_dates(D2, D1),
+	%% check for deleted objects
+	Del1 = dict:is_key(<<"X-Riak-Deleted">>, C1#r_content.metadata),
+	Del2 = dict:is_key(<<"X-Riak-Deleted">>, C2#r_content.metadata),
 
-    SameDate = (Cmp1 =:= Cmp2),
-    case {SameDate, Del1, Del2} of
-        {false, _, _} ->
-            Cmp1;
-        {true, true, false} ->
-            false;
-        {true, false, true} ->
-            true;
-        _ ->
-            %% Dates equal and either both present or both deleted, compare
-            %% by opaque contents.
-            C1 < C2
-    end.
+	SameDate = (Cmp1 =:= Cmp2),
+	case {SameDate, Del1, Del2} of
+		{false, _, _} ->
+			Cmp1;
+		{true, true, false} ->
+			false;
+		{true, false, true} ->
+			true;
+		_ ->
+			%% Dates equal and either both present or both deleted, compare
+			%% by opaque contents.
+			C1 < C2
+	end.
 
 get_vtag(Obj) ->
 	dict:fetch(<<"X-Riak-VTag">>, Obj#r_content.metadata).
@@ -154,9 +159,14 @@ unserialize(Bucket, Key, Val) ->
 	end.
 
 % Log a key/bucket pair to a file
-log_key(OutputFilename, Bucket, Key, _Options) ->
+log_key(OutputFilename, Bucket, Key, Options) ->
 	Msg = io_lib:format("~p,~s~n", [Bucket, binary_to_list(Key)]),
-	file:write_file(OutputFilename, Msg, [append]).
+	file:write_file(OutputFilename, Msg, [append]),
+	case lists:keyfind(sleep_for, 1, Options) of
+		{sleep_for, SleepPeriod} ->
+			timer:sleep(SleepPeriod);
+		_ -> ok
+	end.
 
 % Log all siblings for a riak object (if any exist).
 log_or_resolve_siblings(OutputFilename, Bucket, Key, ObjBinary, Options) ->
@@ -216,7 +226,7 @@ process_node(OutputDir, Options) ->
 	{ok, Ring} = riak_core_ring_manager:get_raw_ring(),
 	Owners = riak_core_ring:all_owners(Ring),
 	LocalVnodes = [IdxOwner || IdxOwner={_, Owner} <- Owners,
-	 					 Owner =:= node()],
+						  Owner =:= node()],
 	lists:foreach(fun(Vnode) -> process_vnode(Vnode, OutputDir, Options) end, LocalVnodes).
 
 % Performs a riak_kv_vnode:fold(), and invokes logging functions for each key in this partition
