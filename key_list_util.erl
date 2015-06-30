@@ -48,13 +48,13 @@
 count_all_keys(OutputDir) ->
 	process_cluster_parallel(OutputDir, [count_keys, log_siblings]).
 
-count_all_keys(OutputDir, Bucket) ->
+count_all_keys_for_bucket(OutputDir, Bucket) ->
 	process_cluster_parallel(OutputDir, [count_keys, log_siblings, {bucket, Bucket}]).
 
 log_all_keys(OutputDir) ->
 	process_cluster_parallel(OutputDir, [log_keys]).
 
-log_all_keys(OutputDir, Bucket) ->
+log_all_keys_for_bucket(OutputDir, Bucket) ->
 	process_cluster_parallel(OutputDir, [log_keys, {bucket, Bucket}]).
 
 % SleepPeriod - optional amount of time to sleep between each key operation,
@@ -62,13 +62,13 @@ log_all_keys(OutputDir, Bucket) ->
 log_all_keys(OutputDir, SleepPeriod) ->
 	process_cluster_parallel(OutputDir, [log_keys, {sleep_for, SleepPeriod}]).
 
-log_all_keys(OutputDir, SleepPeriod, Bucket) ->
+log_all_keys_for_bucket(OutputDir, SleepPeriod, Bucket) ->
 	process_cluster_parallel(OutputDir, [log_keys, {sleep_for, SleepPeriod}, {bucket, Bucket}]).
 
 resolve_all_siblings(OutputDir) ->
 	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings]).
 
-resolve_all_siblings(OutputDir, Bucket) ->
+resolve_all_siblings_for_bucket(OutputDir, Bucket) ->
 	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings, {bucket, Bucket}]).
 
 %% =================================================================================================
@@ -258,8 +258,8 @@ process_vnode(Vnode, OutputDir, Options) ->
 	FoldOptions = case proplists:get_value(bucket, Options, undefined) of
 		undefined ->
 			[];
-		Bucket ->
-			[{bucket, Bucket}]
+		SingleBucket ->
+			[{bucket, SingleBucket}]
 	end,
 
 	InitialAccumulator = dict:store(<<"BucketKeyCounts">>, dict:new(), dict:new()),
