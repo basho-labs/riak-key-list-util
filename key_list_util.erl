@@ -41,19 +41,38 @@
 		  updatevalue :: term()
 		 }).
 
+%% =================================================================================================
+%% In the following functions, Bucket can be a Bucket or a {BucketType, Bucket} pair.
+%% Including this parameter implies the operation will be run only upon the specified Bucket or pair.
+
 count_all_keys(OutputDir) ->
 	process_cluster_parallel(OutputDir, [count_keys, log_siblings]).
 
+count_all_keys(OutputDir, Bucket) ->
+	process_cluster_parallel(OutputDir, [count_keys, log_siblings, {bucket, Bucket}]).
+
 log_all_keys(OutputDir) ->
 	process_cluster_parallel(OutputDir, [log_keys]).
+
+log_all_keys(OutputDir, Bucket) ->
+	process_cluster_parallel(OutputDir, [log_keys, {bucket, Bucket}]).
 
 % SleepPeriod - optional amount of time to sleep between each key operation,
 % in milliseconds
 log_all_keys(OutputDir, SleepPeriod) ->
 	process_cluster_parallel(OutputDir, [log_keys, {sleep_for, SleepPeriod}]).
 
+log_all_keys(OutputDir, SleepPeriod, Bucket) ->
+	process_cluster_parallel(OutputDir, [log_keys, {sleep_for, SleepPeriod}, {bucket, Bucket}]).
+
 resolve_all_siblings(OutputDir) ->
 	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings]).
+
+resolve_all_siblings(OutputDir, Bucket) ->
+	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings, {bucket, Bucket}]).
+
+%% =================================================================================================
+
 
 % Used for sorting an object's siblings in modified timestamp order (most recently modified to least)
 % Duplicated from riak_kv/riak_object (since it's not exported from that module)
@@ -236,6 +255,13 @@ process_vnode(Vnode, OutputDir, Options) ->
 	SiblingsFilename = filename:join(OutputDir, [io_lib:format("~s-~p-siblings.log", [Node, Partition])]),
 	KeysFilename = filename:join(OutputDir, [io_lib:format("~s-~p-keys.log", [Node, Partition])]),
 
+	FoldOptions = case proplists:get_value(bucket, Options, undefined) of
+		undefined ->
+			[];
+		Bucket ->
+			[{bucket, Bucket}]
+	end,
+
 	InitialAccumulator = dict:store(<<"BucketKeyCounts">>, dict:new(), dict:new()),
 	ProcessObj = fun(BKey, ObjBinary, AccDict) ->
 		{Bucket, Key} = BKey,
@@ -260,7 +286,7 @@ process_vnode(Vnode, OutputDir, Options) ->
 			_ -> AccDict
 		end
 	end,
-	Results = riak_kv_vnode:fold(Vnode, ProcessObj, InitialAccumulator),
+	Results = riak_kv_vnode:fold(Vnode, ProcessObj, InitialAccumulator, FoldOptions),
 	write_vnode_totals(CountsFilename, Results).
 
 write_vnode_totals(OutputFilename, Results) ->
