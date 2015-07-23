@@ -248,3 +248,35 @@ runs sequentially, once a sibling is resolved for one node, this also resolves a
 encountered on other nodes.
 
 As with the other functions in this utility, this function also has an alternative, two-argument version resolves siblings for only a single bucket: `key_list_util:resolve_all_siblings_for_bucket(OutputDirectory, Bucket)`. Here, Bucket is either a bucket name binary, or a {BucketType, Bucket} pair of binaries.
+
+<br>
+
+## Direct Deletes
+
+Rarely, you will come upon an object that has been turned into a tombstone, but has not been reaped. This can happen due to the distributed nature of the database coupled with it being an AP, rather than CP store. Also, the erlang timers that schedule the reaps can occasionally fail for other reasons.
+
+Whatever the case, the following function is there for use in such a case:
+
+```
+local_direct_delete(Index, Bucket, Key)
+```
+
+Here, **Index** is an integer representing the vnode or partition that the tombstone is on. **Bucket** and **Key** are binaries, as described above, and look like *<<"bucketOrKeyName">>*.
+
+<br>
+
+## Preflists
+
+It can be useful to get the preflist, up to a specified n-val, for a given object identifier. One example of use is to determine whether an object has been orphaned at an n-val higher than that in the bucket config. This might occur due to a previous lowering of n-val for that bucket.
+
+```
+get_preflist_for_key(Bucket, Key, NValue)
+```
+
+Here, **Bucket** and **Key** are binaries as above. **NValue** is an integer representing the length of the preflist you want returned.
+
+***Please note*** that results will differ for different ring sizes. So make sure you test in the same cluster you are working with, or one with the same ring size. Also, NValue cannot be higher than the ringsize of the cluster you are attached to; if it is, the function will fail with an error.
+
+<br>
+
+~

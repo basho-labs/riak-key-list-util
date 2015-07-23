@@ -20,6 +20,9 @@
 %%
 %% -------------------------------------------------------------------
 
+%% TODOs
+%% * replace foreach loops with foldl loops, taking errors into account and returning them
+
 -module(key_list_util).
 -compile(export_all).
 
@@ -70,6 +73,27 @@ resolve_all_siblings(OutputDir) ->
 
 resolve_all_siblings_for_bucket(OutputDir, Bucket) ->
 	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings, {bucket, Bucket}]).
+
+local_direct_delete(Index, Bucket, Key) when
+	is_integer(Index),
+	is_binary(Bucket),
+	is_binary(Key) ->
+	DeleteReq = {riak_kv_delete_req_v1, {Bucket, Key}, make_ref()},
+	riak_core_vnode_master:sync_command({Index, node()}, DeleteReq, riak_kv_vnode_master).
+
+get_preflist_for_key(Bucket, Key, NValue) when 
+	is_binary(Bucket),
+	is_binary(Key),
+	is_integer(NValue) ->
+	BKey = {Bucket,Key},
+	{ok, Ring} = riak_core_ring_manager:get_my_ring(),
+	DocIdx = riak_core_util:chash_key(BKey),
+	% BucketProps = riak_core_bucket:get_bucket(Bucket, Ring), 
+	% [NValue] = [Y || {X1, Y} <- BucketProps, n_val == X1],
+	UpNodes = riak_core_node_watcher:nodes(riak_kv),
+	Preflist = riak_core_apl:get_apl_ann(DocIdx, NValue, Ring, UpNodes),
+	[IndexNode || {IndexNode, _Type} <- Preflist].
+
 
 %% =================================================================================================
 
@@ -246,7 +270,7 @@ process_node(OutputDir, Options) ->
 	Owners = riak_core_ring:all_owners(Ring),
 	LocalVnodes = [IdxOwner || IdxOwner={_, Owner} <- Owners,
 						  Owner =:= node()],
-	lists:foreach(fun(Vnode) -> process_vnode(Vnode, OutputDir, Options) end, LocalVnodes).
+	lists:foreach(fun(Vnode) -> process_vnode(Vnode, OutputDir, Options) end, LocalVnodes). %% TODO foreach
 
 % Performs a riak_kv_vnode:fold(), and invokes logging functions for each key in this partition
 process_vnode(Vnode, OutputDir, Options) ->
@@ -297,6 +321,6 @@ write_vnode_totals(OutputFilename, Results) ->
 				{Bucket, Count} = BucketCount,
 				file:write_file(OutputFilename, io_lib:format("~p,~B~n", [Bucket, Count]), [append])
 			end,
-			lists:foreach(WriteBucketFun, Counts);
-		_ -> ok
+			lists:foreach(WriteBucketFun, Counts); %% TODO foreach
+		_ -> ok	%% TODO return a result
 	end.
