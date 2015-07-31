@@ -74,7 +74,7 @@ log_all_keys(OutputDir, SleepPeriod) ->
 log_all_keys_for_bucket(OutputDir, SleepPeriod, Bucket) ->
 	process_cluster_parallel(OutputDir, [log_keys, {sleep_for, SleepPeriod}, {bucket, Bucket}]).
 
-log_all_keys_for_vnode(OutputDir, Vnode) ->
+log_all_keys_for_vnode(OutputDir, SleepPeriod, Vnode) ->
 	process_cluster_parallel_for_vnode(OutputDir, [log_keys, {sleep_for, SleepPeriod}], Vnode).
 
 resolve_all_siblings(OutputDir) ->
