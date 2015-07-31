@@ -36,13 +36,22 @@ This script needs to be run from a Riak console, on one of the Riak nodes.
 gathered together in one location via `scp` or similar mechanisms.
 
 ## Counting keys (per bucket) and Logging Siblings
-This script works by iterating over every single object, on every partition in the cluster. 
-In order to avoid doing this multiple times, the functionality for counting keys and logging objects that contain siblings
-is unified into one function, `key_list_util:count_all_keys(OutputDirectory)`. 
 
-It takes a single argument, a directory to write the log files to. If you are creating this directory, make sure to do this on every node.
+This script works by iterating over every object in every partition, on a single partition, or on a single bucket. In order to avoid doing this multiple times, the functionality for counting keys and logging objects that contain siblings is unified into the same function.  The three variations of the function are:
 
-There is also an alternative, two-argument version of this function that counts keys for only a single bucket: `key_list_util:count_all_keys_for_bucket(OutputDirectory, Bucket)`. Here, Bucket is either a bucket name binary, or a {BucketType, Bucket} pair of binaries.
+```erlang
+key_list_util:count_all_keys(OutputDirectory).
+key_list_util:count_all_keys_for_bucket(OutputDirectory, Bucket).
+key_list_util:count_all_keys_for_vnode(OutputDirectory, Vnode).
+```
+
+Example usage:
+
+```erlang
+key_list_util:count_all_keys("/tmp/").
+key_list_util:count_all_keys_for_bucket("/tmp/", test).
+key_list_util:count_all_keys_for_vnode("/tmp/", 1438665674247607560106752257205091097473808596992).
+```
 
 On the Riak console, once the script has been compiled (for this example, the log files will be created in `/tmp/`), run:
 
@@ -137,7 +146,7 @@ For example:
 "test-bucket-two","key100"
 ```
 
-As with key counting, this function also has an alternative, two-argument version logs keys for only a single bucket: `key_list_util:log_all_keys_for_bucket(OutputDirectory, Bucket)`. Here, Bucket is either a bucket name binary, or a {BucketType, Bucket} pair of binaries.
+As with key counting, this function also has two alternatives which take two arguments.  One which executes on a single bucket: `key_list_util:log_all_keys_for_bucket(OutputDirectory, Bucket).` Bucket is either a bucket name binary, or a {BucketType, Bucket} pair of binaries. The second option is to run per vnode (partition): `key_list_util:log_all_keys_for_vnode(OutputDirectory, Vnode)`.  
 
 
 #### Using Key Logs for Verification
@@ -247,7 +256,7 @@ Note: There will be fewer `*-siblings.log` entries than during key counting and 
 runs sequentially, once a sibling is resolved for one node, this also resolves all 3 replicas, and so the resolved objects will not be
 encountered on other nodes.
 
-As with the other functions in this utility, this function also has an alternative, two-argument version resolves siblings for only a single bucket: `key_list_util:resolve_all_siblings_for_bucket(OutputDirectory, Bucket)`. Here, Bucket is either a bucket name binary, or a {BucketType, Bucket} pair of binaries.
+As with the other functions in this utility, this function also has two alternatives.  The first two-argument version resolves siblings for only a single bucket: `key_list_util:resolve_all_siblings_for_bucket(OutputDirectory, Bucket).` Here, Bucket is either a bucket name binary, or a {BucketType, Bucket} pair of binaries.  The second option is to run per vnode (partition): `key_list_util:resolve_all_keys_for_vnode(OutputDirectory, Vnode).` 
 
 <br>
 
