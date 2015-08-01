@@ -54,11 +54,17 @@ count_all_keys(OutputDir) ->
 count_all_keys_for_bucket(OutputDir, Bucket) ->
 	process_cluster_parallel(OutputDir, [count_keys, log_siblings, {bucket, Bucket}]).
 
+count_all_keys_for_vnode(OutputDir, Vnode) ->
+	process_cluster_parallel_for_vnode(OutputDir, [count_keys, log_siblings], Vnode).
+
 log_all_keys(OutputDir) ->
 	process_cluster_parallel(OutputDir, [log_keys]).
 
 log_all_keys_for_bucket(OutputDir, Bucket) ->
 	process_cluster_parallel(OutputDir, [log_keys, {bucket, Bucket}]).
+
+log_all_keys_for_vnode(OutputDir, Vnode) ->
+	process_cluster_parallel_for_vnode(OutputDir, [log_keys], Vnode).
 
 % SleepPeriod - optional amount of time to sleep between each key operation,
 % in milliseconds
@@ -68,11 +74,17 @@ log_all_keys(OutputDir, SleepPeriod) ->
 log_all_keys_for_bucket(OutputDir, SleepPeriod, Bucket) ->
 	process_cluster_parallel(OutputDir, [log_keys, {sleep_for, SleepPeriod}, {bucket, Bucket}]).
 
+log_all_keys_for_vnode(OutputDir, SleepPeriod, Vnode) ->
+	process_cluster_parallel_for_vnode(OutputDir, [log_keys, {sleep_for, SleepPeriod}], Vnode).
+
 resolve_all_siblings(OutputDir) ->
 	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings]).
 
 resolve_all_siblings_for_bucket(OutputDir, Bucket) ->
 	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings, {bucket, Bucket}]).
+
+resolve_all_siblings_for_vnode(OutputDir, Vnode) ->
+	process_cluster_serial_for_vnode(OutputDir, [log_siblings, resolve_siblings], Vnode).
 
 local_direct_delete(Index, Bucket, Key) when
 	is_integer(Index),
@@ -263,6 +275,27 @@ process_cluster_serial(OutputDir, Options) ->
 	lists:foreach(NodeFun, Members),
 	io:format("Done.~n").
 
+%% For per vnode operations
+process_cluster_parallel_for_vnode(OutputDir, Options, Vnode) ->
+	io:format("Scanning all nodes in parallel...~n"),
+	Members = member_nodes(),
+	load_module_on_nodes(?MODULE, Members),
+	rpc:multicall(Members, ?MODULE, process_vnode_on_node, [OutputDir, Options, Vnode]),
+	io:format("Done.~n").
+
+% For each node in the cluster, load this module,
+% and invoke the process_node() function on its vnodes.
+process_cluster_serial_for_vnode(OutputDir, Options, Vnode) ->
+	io:format("Scanning all nodes serially...~n"),
+	Members = member_nodes(),
+	load_module_on_nodes(?MODULE, Members),
+	NodeFun = fun(Node) ->
+		io:format("Processing node ~p~n", [Node]),
+		rpc:call(Node, ?MODULE, process_vnode_on_node, [OutputDir, Options, Vnode])
+	end,
+	lists:foreach(NodeFun, Members),
+	io:format("Done.~n").
+
 % Invoked on each member node in the ring
 % Calls process_vnode() on each vnode local to this node.
 process_node(OutputDir, Options) ->
@@ -312,6 +345,31 @@ process_vnode(Vnode, OutputDir, Options) ->
 	end,
 	Results = riak_kv_vnode:fold(Vnode, ProcessObj, InitialAccumulator, FoldOptions),
 	write_vnode_totals(CountsFilename, Results).
+
+match_vnode(Vnode, VnodeArg, OutputDir, Options) ->
+	% 
+	%io:format("Comparing ~p~n", [VnodeArg]),
+	%io:format("With ~p~n", [Vnode]),
+	case is_element_of_tuple(Vnode, VnodeArg) of
+	 	true ->
+	 		io:format("Processing vnode ~p~n", [VnodeArg]),
+			process_vnode(Vnode, OutputDir, Options);
+		_ -> ok
+	end.
+
+
+% Invoked on each member node in the ring
+% Calls process_vnode() on each vnode local to this node.
+process_vnode_on_node(OutputDir, Options, VnodeArg) ->
+	{ok, Ring} = riak_core_ring_manager:get_raw_ring(),
+	Owners = riak_core_ring:all_owners(Ring),
+	LocalVnodes = [IdxOwner || IdxOwner={_, Owner} <- Owners, Owner =:= node()],
+	lists:foreach(fun(Vnode) -> match_vnode(Vnode, VnodeArg, OutputDir, Options) end, LocalVnodes).
+
+	
+
+is_element_of_tuple(Tuple, Element) ->
+    lists:member(Element, tuple_to_list(Tuple)).
 
 write_vnode_totals(OutputFilename, Results) ->
 	case dict:is_key(<<"BucketKeyCounts">>, Results) of
