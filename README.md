@@ -205,6 +205,17 @@ Once the sorted key logs are copied to a central location via `scp` (see section
     diff /tmp/cluster-v1/ /tmp/cluster-v2/
     ```
 
+### Finding size of all keys
+The output will appear in the form of `[node name]-[partition number]-sizes.log`. This function takes options as a list. The `with_metadata` option controls whether to return the whole object with metadata, or just the size of values. The `ignore_siblings` option controls whether to consider siblings in the calculations, or return the size of the first value (or an estimate of all the objects divided by the number of siblings).
+
+For example:
+
+```erlang
+key_list_util:size_all_keys("/tmp/", [with_metadata, ignore_siblings]).
+```
+
+The `size_all_keys()` function requires key duplication similar to `log_all_keys()` above. Its output adds a size of objects in bytes to the end of the `log_all_keys()` output.
+
 ### Logs of Objects with Siblings
 These will be named in the form of `[node name]-[partition number]-siblings.log`. (If no objects with siblings are found for a particular partition,
 no siblings log file will be created for that partition). The files consist of the following entries for each object, separated by a single blank line:
