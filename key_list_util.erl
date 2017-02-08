@@ -69,7 +69,7 @@ log_all_keys_for_vnode(OutputDir, Vnode) ->
 % Find the size of data stored. Takes options to add object metadata and 
 % count siblings. Default is to only count value sizes and only the first 
 % returned sibling. Send Options as a list of atoms 
-% e.g. [with_metadata, ignore_siblings] to add metadata to results and count 
+% e.g. [raw_size, ignore_siblings] to add metadata to results and count 
 % all siblings
 size_all_keys(OutputDir) ->
 	process_cluster_parallel(OutputDir, [size_keys]).
@@ -251,37 +251,17 @@ log_key(OutputFilename, Bucket, Key, Options) ->
 		_ -> ok
 	end.
 
-% Get the sibling count
-get_sibling_count(Bucket, Key, ObjBinary) ->
-	Obj = unserialize(Bucket, Key, ObjBinary),
-	case Obj of
-		{error, _Error} ->
-			1;  % Error unserializing, assume one sibling count
-		_ ->
-			riak_object:value_count(Obj)
-	end.
-
 % Log a key/bucket pair to a file with object sizes
 size_key(OutputFilename, Bucket, Key, ObjBinary, Options) ->
-	case lists:member(with_metadata, Options) of
-		true ->
-			case lists:member(ignore_siblings, Options) of
-				true ->
-					% Divide size by siblings to get an average size
-					ByteSize = (byte_size(ObjBinary) + 1) / get_sibling_count(Bucket, Key, ObjBinary);
-
-				_ ->
-					ByteSize = byte_size(ObjBinary)
-			end;
-		_ -> 
-			case lists:member(ignore_siblings, Options) of
-				true ->
-					[Value|_] = riak_object:get_values(unserialize(Bucket, Key, ObjBinary)),
-					ByteSize = byte_size(Value);
-				_ ->
-					% Get siblings
-					ByteSize = lists:foldl(fun(X,Sum) -> byte_size(X) + Sum end, 0, riak_object:get_values(unserialize(Bucket, Key, ObjBinary)))
-			end
+	case {lists:member(raw_size, Options), lists:member(ignore_siblings, Options)} of
+		{true, _} ->  % raw_size, size of the object, including siblings
+			ByteSize = byte_size(ObjBinary);
+		{false, true} -> % ignore_siblings, size of first value returned
+			[Value|_] = riak_object:get_values(unserialize(Bucket, Key, ObjBinary)),
+			ByteSize = byte_size(Value);
+		{false, false} -> % neither, aggregates values for all siblings
+			% Get siblings
+			ByteSize = lists:foldl(fun(X,Sum) -> byte_size(X) + Sum end, 0, riak_object:get_values(unserialize(Bucket, Key, ObjBinary)))
 	end,
 	Msg = io_lib:format("~p,~s,~p~n", [Bucket, binary_to_list(Key), ByteSize]),
 	file:write_file(OutputFilename, Msg, [append]),
