@@ -66,6 +66,29 @@ log_all_keys_for_bucket(OutputDir, Bucket) ->
 log_all_keys_for_vnode(OutputDir, Vnode) ->
 	process_cluster_parallel_for_vnode(OutputDir, [log_keys], Vnode).
 
+% Find the size of data stored. Takes options to add object metadata and 
+% count siblings. Default is to only count value sizes and only the first 
+% returned sibling. Send Options as a list of atoms 
+% e.g. [raw_size, ignore_siblings] to add metadata to results and count 
+% all siblings
+size_all_keys(OutputDir) ->
+	process_cluster_parallel(OutputDir, [size_keys]).
+
+size_all_keys(OutputDir, Options) ->
+	process_cluster_parallel(OutputDir, [size_keys|Options]).
+
+size_all_keys_for_bucket(OutputDir, Bucket) ->
+	process_cluster_parallel(OutputDir, [size_keys, {bucket, Bucket}]).
+
+size_all_keys_for_bucket(OutputDir, Bucket, Options) ->
+	process_cluster_parallel(OutputDir, [size_keys, {bucket, Bucket}] ++ Options).
+
+size_all_keys_for_vnode(OutputDir, Vnode) ->
+	process_cluster_parallel_for_vnode(OutputDir, [size_keys], Vnode).
+
+size_all_keys_for_vnode(OutputDir, Vnode, Options) ->
+	process_cluster_parallel_for_vnode(OutputDir, [size_keys|Options], Vnode).
+
 % SleepPeriod - optional amount of time to sleep between each key operation,
 % in milliseconds
 log_all_keys(OutputDir, SleepPeriod) ->
@@ -76,6 +99,11 @@ log_all_keys_for_bucket(OutputDir, SleepPeriod, Bucket) ->
 
 log_all_keys_for_vnode(OutputDir, SleepPeriod, Vnode) ->
 	process_cluster_parallel_for_vnode(OutputDir, [log_keys, {sleep_for, SleepPeriod}], Vnode).
+
+%% Call size_all_keys* functions like: 
+%%    size_all_keys_(OutputDir, [{sleep_for, SleepPeriod}])
+%% to sleep between key operations. Setting Options already creates a /2 function
+%% Other options can also be added to the call list
 
 resolve_all_siblings(OutputDir) ->
 	process_cluster_serial(OutputDir, [log_siblings, resolve_siblings]).
@@ -223,6 +251,26 @@ log_key(OutputFilename, Bucket, Key, Options) ->
 		_ -> ok
 	end.
 
+% Log a key/bucket pair to a file with object sizes
+size_key(OutputFilename, Bucket, Key, ObjBinary, Options) ->
+	case {lists:member(raw_size, Options), lists:member(ignore_siblings, Options)} of
+		{true, _} ->  % raw_size, size of the object, including siblings
+			ByteSize = byte_size(ObjBinary);
+		{false, true} -> % ignore_siblings, size of first value returned
+			[Value|_] = riak_object:get_values(unserialize(Bucket, Key, ObjBinary)),
+			ByteSize = byte_size(Value);
+		{false, false} -> % neither, aggregates values for all siblings
+			% Get siblings
+			ByteSize = lists:foldl(fun(X,Sum) -> byte_size(X) + Sum end, 0, riak_object:get_values(unserialize(Bucket, Key, ObjBinary)))
+	end,
+	Msg = io_lib:format("~p,~s,~p~n", [Bucket, binary_to_list(Key), ByteSize]),
+	file:write_file(OutputFilename, Msg, [append]),
+	case lists:keyfind(sleep_for, 1, Options) of
+		{sleep_for, SleepPeriod} ->
+			timer:sleep(SleepPeriod);
+		_ -> ok
+	end.
+
 % Log all siblings for a riak object (if any exist).
 log_or_resolve_siblings(OutputFilename, Bucket, Key, ObjBinary, Options) ->
 	Obj = unserialize(Bucket, Key, ObjBinary),
@@ -311,6 +359,7 @@ process_vnode(Vnode, OutputDir, Options) ->
 	CountsFilename = filename:join(OutputDir, [io_lib:format("~s-~p-counts.log", [Node, Partition])]),
 	SiblingsFilename = filename:join(OutputDir, [io_lib:format("~s-~p-siblings.log", [Node, Partition])]),
 	KeysFilename = filename:join(OutputDir, [io_lib:format("~s-~p-keys.log", [Node, Partition])]),
+	SizesFilename = filename:join(OutputDir, [io_lib:format("~s-~p-sizes.log", [Node, Partition])]),
 
 	FoldOptions = case proplists:get_value(bucket, Options, undefined) of
 		undefined ->
@@ -326,6 +375,12 @@ process_vnode(Vnode, OutputDir, Options) ->
 		case lists:member(log_keys, Options) of
 			true ->
 				log_key(KeysFilename, Bucket, Key, Options);
+			_ -> ok
+		end,
+
+		case lists:member(size_keys, Options) of
+			true ->
+				size_key(SizesFilename, Bucket, Key, ObjBinary, Options);
 			_ -> ok
 		end,
 

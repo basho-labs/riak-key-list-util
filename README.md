@@ -4,7 +4,7 @@ riak-key-list-util
 A Riak console utility script for per-vnode key counting, siblings logging and more. (For Riak 1.1.4 and above)
 
 ## Usage
-This script needs to be run from a Riak console, on one of the Riak nodes. 
+This script needs to be run from a Riak console, on one of the Riak nodes. All nodes must be up and ready to accept requests or the script will fail. Every run of the script will append its output to the output of any previous run, so it’s a good idea to clear out the previous results.
 
 
 1. Clone this repository
@@ -205,6 +205,34 @@ Once the sorted key logs are copied to a central location via `scp` (see section
     diff /tmp/cluster-v1/ /tmp/cluster-v2/
     ```
 
+### Finding size of all keys
+Finding the size of all keys works similarly to listing all keys. You can iterate over all partitions in the cluster, a single partition, or a single bucket. The six variations of the function are:
+
+```
+size_all_keys(OutputDir).
+size_all_keys(OutputDir, Options).
+size_all_keys_for_bucket(OutputDir, Bucket).
+size_all_keys_for_bucket(OutputDir, Bucket, Options).
+size_all_keys_for_vnode(OutputDir, Vnode).
+size_all_keys_for_vnode(OutputDir, Vnode, Options).
+```
+
+The output will appear in the form of `[node name]-[partition number]-sizes.log`. These functions can accept options as a list. If no options are required, you may leave off the argument. The `raw_size` option controls whether to return the whole object with metadata, or just the size of values. The `ignore_siblings` option controls whether to consider siblings in the calculations, or return the size of the first value (or an estimate of all the objects divided by the number of siblings). These two options are mutually exclusive. If both are provided, `raw_size` will take precedence, and the script will silently drop `ignore_siblings`.
+
+For example:
+
+```erlang
+key_list_util:size_all_keys("/tmp/").
+```
+
+Print out full object size, including any siblings:
+
+```erlang
+key_list_util:size_all_keys("/tmp/", [raw_size]).
+```
+
+The `size_all_keys()` function requires key duplication similar to `log_all_keys()` above. Its output adds a size of objects in bytes to the end of the `log_all_keys()` output.
+
 ### Logs of Objects with Siblings
 These will be named in the form of `[node name]-[partition number]-siblings.log`. (If no objects with siblings are found for a particular partition,
 no siblings log file will be created for that partition). The files consist of the following entries for each object, separated by a single blank line:
@@ -270,7 +298,7 @@ Whatever the case, the following function is there for use in such a case:
 local_direct_delete(Index, Bucket, Key)
 ```
 
-Here, **Index** is an integer representing the vnode or partition that the tombstone is on. **Bucket** and **Key** are binaries, as described above, and look like *<<"bucketOrKeyName">>*.
+Here, **Index** is an integer representing the vnode or partition that the tombstone is on. **Bucket** and **Key** are binaries, as described above, and look like *\<\<"bucketOrKeyName"\>\>*.
 
 <br>
 
@@ -288,4 +316,4 @@ Here, **Bucket** and **Key** are binaries as above. **NValue** is an integer rep
 
 <br>
 
-~
+\~
